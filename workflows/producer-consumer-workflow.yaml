@@ -1,0 +1,112 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: producer-consumer-rds
+  # namespace: argo
+spec:
+  serviceAccountName: argo
+  entrypoint: batch-pipeline
+
+  arguments:
+    parameters:
+    - name: batch-size
+      value: "100"
+    - name: batch-id
+      value: "{{workflow.uid}}"
+
+  templates:
+  - name: batch-pipeline
+    dag:
+      tasks:
+      # Step 1: Producer - RDSにデータを書き込む
+      - name: producer
+        template: producer-job
+        arguments:
+          parameters:
+          - name: batch-size
+            value: "{{workflow.parameters.batch-size}}"
+          - name: batch-id
+            value: "{{workflow.parameters.batch-id}}"
+
+      # Step 2: Consumer - Producerの完了後にRDSからデータを処理
+      - name: consumer
+        template: consumer-job
+        dependencies: [producer]
+        arguments:
+          parameters:
+          - name: batch-id
+            value: "{{workflow.parameters.batch-id}}"
+
+  # Producer Job
+  - name: producer-job
+    inputs:
+      parameters:
+      - name: batch-size
+      - name: batch-id
+    container:
+      image: springboot-producer:latest
+      imagePullPolicy: Never
+      command: ["java"]
+      args:
+        - "-jar"
+        - "/app/producer.jar"
+        - "--batch.size={{inputs.parameters.batch-size}}"
+        - "--batch.id={{inputs.parameters.batch-id}}"
+      env:
+      - name: SPRING_DATASOURCE_URL
+        value: "jdbc:mysql://mysql:3306/batch_db"
+      - name: SPRING_DATASOURCE_USERNAME
+        valueFrom:
+          secretKeyRef:
+            name: mysql-credentials
+            key: username
+      - name: SPRING_DATASOURCE_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: mysql-credentials
+            key: password
+      - name: SPRING_DATASOURCE_DRIVER_CLASS_NAME
+        value: "com.mysql.cj.jdbc.Driver"
+      resources:
+        requests:
+          memory: "512Mi"
+          cpu: "250m"
+        limits:
+          memory: "1Gi"
+          cpu: "500m"
+
+  # Consumer/Worker Job
+  - name: consumer-job
+    inputs:
+      parameters:
+      - name: batch-id
+    container:
+      image: springboot-consumer:latest
+      imagePullPolicy: Never
+      command: ["java"]
+      args:
+        - "-jar"
+        - "/app/consumer.jar"
+        - "--batch.id={{inputs.parameters.batch-id}}"
+      env:
+      - name: SPRING_DATASOURCE_URL
+        value: "jdbc:mysql://mysql:3306/batch_db"
+      - name: SPRING_DATASOURCE_USERNAME
+        valueFrom:
+          secretKeyRef:
+            name: mysql-credentials
+            key: username
+      - name: SPRING_DATASOURCE_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: mysql-credentials
+            key: password
+      - name: SPRING_DATASOURCE_DRIVER_CLASS_NAME
+        value: "com.mysql.cj.jdbc.Driver"
+      resources:
+        requests:
+          memory: "512Mi"
+          cpu: "250m"
+        limits:
+          memory: "1Gi"
+          cpu: "500m"
