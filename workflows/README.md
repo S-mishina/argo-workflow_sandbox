@@ -20,7 +20,15 @@ spec:
 
 ## DAG (Directed Acyclic Graph)
 
-DAG allows you to define task dependencies and control parallel/sequential execution.
+DAG (Directed Acyclic Graph) allows you to define task dependencies and control parallel/sequential execution.
+
+### Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **Maximize Parallelism** | Tasks without dependencies run in parallel automatically |
+| **Explicit Dependencies** | Define dependencies declaratively with `dependencies` |
+| **Failure Control** | Dependent tasks are skipped when upstream tasks fail |
 
 ### Basic DAG Structure
 
@@ -48,12 +56,14 @@ templates:
 ### Dependency Patterns
 
 **Sequential**
+
 ```mermaid
 graph LR
     A --> B --> C
 ```
 
 **Parallel**
+
 ```mermaid
 graph LR
     A --> B
@@ -61,11 +71,95 @@ graph LR
 ```
 
 **Diamond**
+
 ```mermaid
 graph LR
     A --> B --> D
     A --> C --> D
 ```
+
+### Failure Behavior Control
+
+#### failFast (Default: true)
+
+```yaml
+dag:
+  failFast: false  # Continue other tasks even if one fails
+  tasks:
+    # ...
+```
+
+#### depends (Advanced Dependency Conditions)
+
+Use `depends` instead of `dependencies` to specify conditions like success/failure/skipped:
+
+```yaml
+dag:
+  tasks:
+  - name: task-a
+    template: template-a
+
+  - name: task-b
+    depends: "task-a.Succeeded"  # Only on success
+    template: template-b
+
+  - name: task-c
+    depends: "task-a.Failed"     # Only on failure
+    template: error-handler
+
+  - name: task-d
+    depends: "task-a.Succeeded || task-a.Failed"  # On completion
+    template: cleanup
+
+  - name: task-e
+    depends: "(task-b.Succeeded && task-c.Skipped) || task-d.Succeeded"
+    template: complex-condition
+```
+
+#### Available Conditions
+
+| Condition | Description |
+|-----------|-------------|
+| `.Succeeded` | Task succeeded |
+| `.Failed` | Task failed |
+| `.Skipped` | Task was skipped |
+| `.Daemoned` | Daemon task is running |
+| `.Errored` | Task errored |
+
+### Dynamic Task Generation (withItems / withParam)
+
+```yaml
+dag:
+  tasks:
+  - name: fan-out
+    template: process-item
+    withItems:
+      - item1
+      - item2
+      - item3
+    # 3 tasks run in parallel
+
+  - name: fan-out-param
+    template: process-item
+    withParam: "{{tasks.previous.outputs.parameters.items}}"
+    # Dynamically generate tasks from JSON list
+```
+
+### Steps vs DAG
+
+| Aspect | Steps | DAG |
+|--------|-------|-----|
+| Dependencies | Implicit (order-based) | Explicit (`dependencies`) |
+| Best for | Simple sequential flows | Complex dependency graphs |
+| Parallelism | Only within same step | Auto-parallel if no deps |
+| Readability | Good for simple flows | Good for complex flows |
+
+### Best Practices
+
+1. **Avoid circular dependencies** - DAG does not allow cycles
+2. **Use unique task names** - No duplicates within same DAG
+3. **Consider failFast** - Set to `false` if error handling needed
+4. **depends vs dependencies** - Use `depends` for conditional execution
 
 ## Parameter Passing
 
@@ -149,9 +243,7 @@ dag:
         cpu: "200m"
 ```
 
-## Steps vs DAG
-
-### Steps (Sequential/Parallel Control)
+## Steps Template
 
 ```yaml
 templates:
@@ -166,10 +258,6 @@ templates:
   - - name: step3          # After step2a and step2b complete
       template: template-d
 ```
-
-### DAG (Dependency-Based)
-
-DAG is better suited for complex dependencies, with explicit control via `dependencies`.
 
 ## Conditional Execution
 
