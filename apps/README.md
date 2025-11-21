@@ -2,6 +2,26 @@
 
 Spring Boot applications for the Producer-Consumer batch processing workflow.
 
+## Processing Flow
+
+```mermaid
+sequenceDiagram
+    participant Argo as Argo Workflow
+    participant Producer
+    participant MySQL
+    participant Consumer
+
+    Argo->>Producer: Start (batch-size, batch-id)
+    Producer->>MySQL: INSERT batch_tasks (status=PENDING)
+    Producer-->>Argo: Complete
+
+    Argo->>Consumer: Start (batch-id)
+    Consumer->>MySQL: SELECT * WHERE batch_id=? AND status=PENDING
+    Consumer->>Consumer: Process tasks
+    Consumer->>MySQL: UPDATE status=PROCESSED
+    Consumer-->>Argo: Complete
+```
+
 ## Structure
 
 ```
